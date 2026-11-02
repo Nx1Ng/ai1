@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valorant 風格靶場訓練</title>
+    <style>
+        /* === CSS 樣式設定 (Valorant 風格：深色系、銳利邊緣、霓虹紅與青色) === */
+        * {
+            box-sizing: border-box; /* 讓寬高計算包含邊框與內距 */
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0f1923; /* Valorant 經典深藍灰色背景 */
+            color: #ece8e1; /* 柔和亮白文字 */
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            cursor: crosshair; /* 將滑鼠游標改為準星 */
+        }
+
+        /* 遊戲頂部資訊面板 (HUD) */
+        #hud {
+            position: absolute;
+            top: 20px;
+            display: flex;
+            gap: 40px;
+            font-size: 24px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            text-shadow: 0 0 10px rgba(255, 70, 85, 0.5);
+            z-index: 10;
+        }
+
+        .hud-item span {
+            color: #ff4655; /* Valorant 經典紅色標記 */
+        }
+
+        /* 遊戲畫布 (靶場範圍) */
+        canvas {
+            background: linear-gradient(135deg, #1b2735 0%, #090a0f 100%);
+            border: 2px solid #383e45;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(14, 206, 155, 0.1);
+            border-radius: 4px;
+        }
+
+        /* 開始/結束遊戲覆蓋層 */
+        #menu {
+            position: absolute;
+            background: rgba(15, 25, 35, 0.95);
+            border: 2px solid #ff4655;
+            padding: 40px;
+            text-align: center;
+            border-radius: 8px;
+            box-shadow: 0 0 30px rgba(255, 70, 85, 0.3);
+            z-index: 20;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #ff4655;
+            letter-spacing: 3px;
+        }
+
+        /* 賽博風按鈕設計 */
+        button {
+            background-color: #ff4655;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            letter-spacing: 2px;
+            cursor: pointer;
+            text-transform: uppercase;
+            transition: all 0.2s ease;
+            clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%); /* 切角設計 */
+        }
+
+        button:hover {
+            background-color: #ff5864;
+            box-shadow: 0 0 15px #ff4655;
+            transform: translateY(-2px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- === HTML 結構 === -->
+    <!-- 頂部計分與計時介面 -->
+    <div id="hud">
+        <div class="hud-item">分數: <span id="score">0</span></div>
+        <div class="hud-item">時間: <span id="timer">30</span>s</div>
+    </div>
+
+    <!-- 遊戲畫布 -->
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+
+    <!-- 選單畫面 (開始/重來) -->
+    <div id="menu">
+        <h1>靶場特訓</h1>
+        <p>在 30 秒內點擊出現的靶標來訓練你的槍法與反應！</p>
+        <button id="startBtn">開始訓練</button>
+    </div>
+
+    <script>
+        /* === JavaScript 遊戲邏輯 === */
+
+        // 取得 DOM 元素
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const timerEl = document.getElementById('timer');
+        const menuEl = document.getElementById('menu');
+        const startBtn = document.getElementById('startBtn');
+        const h1El = menuEl.querySelector('h1');
+        const pEl = menuEl.querySelector('p');
+
+        // 遊戲狀態變數
+        let score = 0;
+        let timeLeft = 30;
+        let gameInterval = null;
+        let targetInterval = null;
+        let targets = []; // 儲存當前畫面上的靶標陣列
+
+        // 靶標物件建構式 (或類別概念)
+        class Target {
+            constructor(x, y, radius) {
+                this.x = x;       // 圓心 X 座標
+                this.y = y;       // 圓心 Y 座標
+                this.radius = radius; // 靶標半徑
+                this.color = '#ff4655'; // 靶標外環顏色 (Valorant紅)
+                this.innerColor = '#ece8e1'; // 靶標內核顏色
+            }
+
+            // 繪製靶標到畫布上
+            draw() {
+                // 外環
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = '#0ece9b'; // 青色科技感邊框
+                ctx.stroke();
+                ctx.closePath();
+
+                // 內環 (中心紅心)
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius * 0.4, 0, Math.PI * 2);
+                ctx.fillStyle = this.innerColor;
+                ctx.fill();
+                ctx.closePath();
+            }
+        }
+
+        // 隨機產生一個新靶標
+        function spawnTarget() {
+            const radius = 25; // 靶標大小
+            // 隨機位置，確保靶標不會超出畫布邊界
+            const x = Math.random() * (canvas.width - radius * 2) + radius;
+            const y = Math.random() * (canvas.height - radius * 2) + radius;
+            
+            // 每次畫面上最多同時存在 3 個靶標
+            if (targets.length < 3) {
+                targets.push(new Target(x, y, radius));
+            }
+        }
+
+        // 開始遊戲函數
+        function startGame() {
+            // 重置遊戲數據
+            score = 0;
+            timeLeft = 30;
+            targets = [];
+            scoreEl.textContent = score;
+            timerEl.textContent = timeLeft;
+
+            // 隱藏開始選單
+            menuEl.style.display = 'none';
+
+            // 啟動倒數計時器 (每秒執行一次)
+            gameInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.textContent = timeLeft;
+
+                if (timeLeft <= 0) {
+                    endGame();
+                }
+            }, 1000);
+
+            // 啟動靶標生成器 (每 700 毫秒生成一個)
+            targetInterval = setInterval(spawnTarget, 700);
+        }
+
+        // 結束遊戲函數
+        function endGame() {
+            // 清除計時器
+            clearInterval(gameInterval);
+            clearInterval(targetInterval);
+            targets = []; // 清空靶標
+
+            // 顯示結算畫面
+            h1El.textContent = '訓練結束';
+            pEl.innerHTML = `你的最終得分是：<span style="color: #ff4655; font-size: 24px;">${score}</span> 分`;
+            startBtn.textContent = '重新挑戰';
+            menuEl.style.display = 'block';
+        }
+
+        // 監聽畫布點擊事件 (模擬開槍射擊)
+        canvas.addEventListener('click', (e) => {
+            if (timeLeft <= 0) return; // 如果遊戲未開始或已結束則不處理
+
+            // 取得滑鼠在畫布上的相對座標
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // 檢查是否點擊到任何靶標
+            for (let i = targets.length - 1; i >= 0; i--) {
+                const t = targets[i];
+                // 計算滑鼠點擊位置與靶標圓心的距離 (商用勾股定理)
+                const distance = Math.hypot(mouseX - t.x, mouseY - t.y);
+
+                // 如果距離小於半徑，代表命中
+                if (distance <= t.radius) {
+                    score += 10; // 命中加 10 分
+                    scoreEl.textContent = score;
+                    targets.splice(i, 1); // 從陣列中移除被擊中的靶標
+                    break; // 每次點擊最多判定一個
+                }
+            }
+        });
+
+        // 遊戲畫面渲染迴圈 (持續更新畫面)
+        function gameLoop() {
+            // 清空畫布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 繪製所有現存的靶標
+            targets.forEach(target => {
+                target.draw();
+            });
+
+            // 循環執行畫面更新
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 綁定按鈕點擊事件以開始遊戲
+        startBtn.addEventListener('click', startGame);
+
+        // 初始啟動畫面渲染迴圈
+        gameLoop();
+    </script>
+</body>
+</html>
